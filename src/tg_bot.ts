@@ -5,6 +5,12 @@ import { getConfig, updateConfig } from './config';
 
 const TG_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
+/** 校验是否为管理员 */
+export function isAdmin(allowedChatId: string, chatId: string | number | null | undefined): boolean {
+  if (!allowedChatId) return true; // 未配置则不限制
+  return String(chatId) === allowedChatId;
+}
+
 /** TG 按钮行 */
 type TgRow = { text: string; callback_data: string }[];
 function kb(rows: TgRow[]): any {
@@ -57,7 +63,8 @@ function channelsListMenu(cfg: AppConfig): any {
   for (let i = 0; i < cfg.channels.length; i++) {
     const ch = cfg.channels[i];
     const on = ch.enabled ? '✔️' : '❌';
-    rows.push([{ text: `${on} ${ch.name} · ${ch.type}`, callback_data: `chan:${i}` }]);
+    const name = ch.name || ch.id || `渠道${i}`;
+    rows.push([{ text: `${on} ${name} · ${ch.type}`, callback_data: `chan:${i}` }]);
   }
   rows.push([{ text: '🔙 返回', callback_data: 'main' }]);
   return kb(rows);
@@ -85,6 +92,10 @@ export async function handleCallback(
     const parts = data.split(':');
     const ev = parts[1];
     const sub = parts[2];
+
+    if (!ev) {
+      return { text: '未知规则', keyboard: mainMenu() };
+    }
 
     if (!sub) {
       const cfg = await getConfig(kv);
@@ -128,7 +139,7 @@ export async function sendTgMessage(
   text: string,
   keyboard?: any
 ): Promise<void> {
-  await fetch(`${TG_API(botToken)}/sendMessage`, {
+  const resp = await fetch(`${TG_API(botToken)}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -138,6 +149,10 @@ export async function sendTgMessage(
       reply_markup: keyboard,
     }),
   });
+  if (!resp.ok) {
+    const body = await resp.text();
+    console.error(`sendMessage failed ${resp.status}: ${body.slice(0, 200)}`);
+  }
 }
 
 /** 编辑 TG 消息 */
@@ -164,6 +179,18 @@ export async function editTgMessage(
     // 如果内容没变，Telegram 返回 400；这种情况忽略
     if (body.toLowerCase().includes('message is not modified')) return;
     console.error(`editMessageText failed ${resp.status}: ${body.slice(0, 200)}`);
+  }
+}
+
+/** 回答 callback query */
+export async function answerCallbackQuery(botToken: string, queryId: string): Promise<void> {
+  const resp = await fetch(`${TG_API(botToken)}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: queryId }),
+  });
+  if (!resp.ok) {
+    console.error(`answerCallbackQuery failed ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
   }
 }
 

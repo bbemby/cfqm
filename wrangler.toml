@@ -11,6 +11,7 @@ id = "your-kv-namespace-id"
 # 必填：
 #   wrangler secret put TG_ADMIN_BOT_TOKEN
 #   wrangler secret put TG_WEBHOOK_SECRET
+#   wrangler secret put TG_ADMIN_CHAT_ID
 #   wrangler secret put EMBY_SERVER_URL
 #   wrangler secret put EMBY_API_KEY
 # 可选：

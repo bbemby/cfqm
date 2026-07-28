@@ -67,7 +67,7 @@ async function sendBark(
       device_key: deviceKey,
       title: notif.title,
       body: notif.content,
-      ...(notif.imageUrl ? { url: notif.imageUrl } : {}),
+      ...(notif.imageUrl ? { image: notif.imageUrl } : {}),
     }),
   });
   if (!resp.ok) throw new Error(`Bark ${resp.status}`);

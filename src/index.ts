@@ -5,13 +5,14 @@ import { getConfig, resolveRuntimeConfig } from './config';
 import { parseEmbyWebhook, renderTemplate, buildPosterUrl } from './emby';
 import { getDisplayName } from './embyboss';
 import { notify } from './channels';
-import { handleCallback, sendTgMessage, editTgMessage, handleSetCommand, setEditState, getEditState } from './tg_bot';
+import { handleCallback, sendTgMessage, editTgMessage, handleSetCommand, getEditState, answerCallbackQuery, isAdmin } from './tg_bot';
 import { DEFAULT_RULES } from './types';
 
 type Bindings = {
   CONFIG: KVNamespace;
   TG_ADMIN_BOT_TOKEN: string;
   TG_WEBHOOK_SECRET: string;
+  TG_ADMIN_CHAT_ID?: string;
   EMBY_SERVER_URL?: string;
   EMBY_API_KEY?: string;
   EMBYBOSS_API_URL?: string;
@@ -81,7 +82,6 @@ app.post('/emby/webhook', async (c) => {
     position: event.position,
     duration: event.duration,
     progress: event.progress,
-    image: buildPosterUrl(rt.embyServerUrl, rt.embyApiKey, event.itemId),
   };
 
   const title = renderTemplate(rule.titleTemplate, vars);
@@ -106,6 +106,8 @@ app.post('/emby/webhook', async (c) => {
 // ============ TG Bot Webhook ============
 app.post('/tg/webhook', async (c) => {
   const kv = c.env.CONFIG;
+  const cfg = await getConfig(kv);
+  const rt = resolveRuntimeConfig(c.env, cfg);
   const botToken = c.env.TG_ADMIN_BOT_TOKEN;
   const webhookSecret = c.env.TG_WEBHOOK_SECRET;
 
@@ -115,18 +117,32 @@ app.post('/tg/webhook', async (c) => {
 
   // 鉴权：Telegram setWebhook 时传入的 secret_token 会带在 X-Telegram-Bot-Api-Secret-Token 头里
   const providedSecret = c.req.header('X-Telegram-Bot-Api-Secret-Token');
-  if (webhookSecret && providedSecret !== webhookSecret) {
+  if (!webhookSecret) {
+    return c.json({ ok: false, error: 'TG_WEBHOOK_SECRET not set' }, 500);
+  }
+  if (providedSecret !== webhookSecret) {
     return c.json({ ok: false, error: 'unauthorized' }, 401);
   }
 
   const update = await c.req.json();
   const message = update.message;
+  const chatId = message?.chat?.id ? String(message.chat.id) : null;
 
-  // 处理 /start
-  if (message?.text === '/start') {
+  // 管理员白名单校验
+  const adminChatId = rt.tgAdminChatId;
+  if (!isAdmin(adminChatId, chatId)) {
+    if (chatId) {
+      await sendTgMessage(botToken, chatId, '⛔ 你不是管理员，无法使用此 Bot。');
+    }
+    return c.json({ ok: false, error: 'forbidden' }, 403);
+  }
+
+  // 处理 /start（支持 /start@botname）
+  if (message?.text && /^\/start(@\w+)?$/.test(message.text)) {
+    if (!chatId) return c.json({ ok: false, error: 'no chat id' }, 400);
     await sendTgMessage(
       botToken,
-      message.chat.id,
+      chatId,
       '⚙️ <b>cfqm 管理</b>\n\n点击按钮管理配置：',
       { inline_keyboard: [
         [{ text: '📋 通知规则管理', callback_data: 'rules' }],
@@ -139,7 +155,7 @@ app.post('/tg/webhook', async (c) => {
 
   // 处理 /set 编辑命令
   if (message?.text && message.text.startsWith('/set')) {
-    const chatId = String(message.chat.id);
+    if (!chatId) return c.json({ ok: false, error: 'no chat id' }, 400);
     const state = await getEditState(kv, chatId);
     if (state) {
       await handleSetCommand(kv, botToken, chatId, message.text);
@@ -153,17 +169,19 @@ app.post('/tg/webhook', async (c) => {
   if (update.callback_query) {
     const cq = update.callback_query;
     const data = cq.data ?? 'noop';
-    const chatId = cq.message?.chat?.id ? String(cq.message.chat.id) : null;
-    const result = await handleCallback(data, kv, chatId);
-    if (result && chatId && cq.message?.message_id) {
-      await editTgMessage(botToken, chatId, cq.message.message_id, result.text, result.keyboard);
+    const cbChatId = cq.message?.chat?.id ? String(cq.message.chat.id) : null;
+
+    // 回调也要校验管理员
+    if (!isAdmin(adminChatId, cbChatId)) {
+      await answerCallbackQuery(botToken, cq.id);
+      return c.json({ ok: false, error: 'forbidden' }, 403);
     }
-    // 回答 callback query
-    await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ callback_query_id: cq.id }),
-    });
+
+    const result = await handleCallback(data, kv, cbChatId);
+    if (result && cbChatId && cq.message?.message_id) {
+      await editTgMessage(botToken, cbChatId, cq.message.message_id, result.text, result.keyboard);
+    }
+    await answerCallbackQuery(botToken, cq.id);
     return c.json({ ok: true });
   }
 

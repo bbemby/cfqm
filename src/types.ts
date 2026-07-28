@@ -54,6 +54,7 @@ export interface AppConfig {
   embyApiKey: string;
   embybossApiUrl: string;
   whitelistTitle: string;
+  tgAdminChatId: string;
 }
 
 /** 默认规则 */

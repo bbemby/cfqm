@@ -52,6 +52,7 @@ npx wrangler kv:namespace create CONFIG
 # 必填
 npx wrangler secret put TG_ADMIN_BOT_TOKEN
 npx wrangler secret put TG_WEBHOOK_SECRET
+npx wrangler secret put TG_ADMIN_CHAT_ID
 npx wrangler secret put EMBY_SERVER_URL
 npx wrangler secret put EMBY_API_KEY
 
@@ -95,6 +96,8 @@ npx wrangler secret put TG_WEBHOOK_SECRET
 ```
 
 注意：Telegram 推送 webhook 时会带 `X-Telegram-Bot-Api-Secret-Token` 请求头，Workers 用这个鉴权。URL 里不要出现 Bot token。
+
+`TG_ADMIN_CHAT_ID` 是你的 Telegram 数字 ID（不是用户名）。配置后只有该 ID 能操作管理 Bot；未配置时不限制（不建议生产环境）。
 
 然后在 Telegram 给 Bot 发 `/start`，即可管理通知规则和渠道。
 
@@ -164,11 +167,9 @@ GET /api/whitelist?emby_id=<emby_user_id>
 
 ## 管理员认证
 
-TG 管理 Bot 通过 `TG_WEBHOOK_SECRET` 鉴权：
-1. 生成随机 secret
-2. setWebhook 时作为 `secret_token` 传给 Telegram
-3. Telegram 每次推送都带 `X-Telegram-Bot-Api-Secret-Token` 头
-4. Workers 校验该头与 `TG_WEBHOOK_SECRET` 一致
+TG 管理 Bot 通过两层鉴权：
+1. `TG_WEBHOOK_SECRET`：Telegram 每次推送都带 `X-Telegram-Bot-Api-Secret-Token` 头，Workers 校验该头
+2. `TG_ADMIN_CHAT_ID`：只有指定 Telegram 用户能操作管理 Bot（强烈建议配置）
 
 ## 本地开发
 

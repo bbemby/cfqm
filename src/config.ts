@@ -4,16 +4,37 @@ import { AppConfig, Channel, Rule, DEFAULT_RULES } from './types';
 
 const CONFIG_KEY = 'app_config';
 
+/** 深拷贝规则 */
+function cloneRules(rules: Record<string, Rule>): Record<string, Rule> {
+  const out: Record<string, Rule> = {};
+  for (const [k, v] of Object.entries(rules)) {
+    out[k] = { ...v };
+  }
+  return out;
+}
+
 /** 默认配置 */
 function defaultConfig(): AppConfig {
   return {
     channels: [],
-    rules: { ...DEFAULT_RULES },
+    rules: cloneRules(DEFAULT_RULES),
     embyServerUrl: '',
     embyApiKey: '',
     embybossApiUrl: '',
     whitelistTitle: '尊敬的白名单用户',
+    tgAdminChatId: '',
   };
+}
+
+/** 深度合并规则：KV 里的规则与默认规则合并 */
+function mergeRules(defaultRules: Record<string, Rule>, savedRules?: Record<string, Partial<Rule>>): Record<string, Rule> {
+  if (!savedRules || typeof savedRules !== 'object') return cloneRules(defaultRules);
+  const out = cloneRules(defaultRules);
+  for (const [k, v] of Object.entries(savedRules)) {
+    if (!v || typeof v !== 'object') continue;
+    out[k] = { ...out[k], ...v };
+  }
+  return out;
 }
 
 /** 从 KV 读取配置 */
@@ -23,7 +44,11 @@ export async function getConfig(kv: KVNamespace): Promise<AppConfig> {
   try {
     const parsed = JSON.parse(raw) as Partial<AppConfig>;
     const cfg = defaultConfig();
-    return { ...cfg, ...parsed };
+    return {
+      ...cfg,
+      ...parsed,
+      rules: mergeRules(DEFAULT_RULES, parsed.rules),
+    };
   } catch {
     return defaultConfig();
   }
@@ -51,6 +76,7 @@ export interface RuntimeConfig {
   embyApiKey: string;
   embybossApiUrl: string;
   tgAdminBotToken: string;
+  tgAdminChatId: string;
   whitelistTitle: string;
 }
 
@@ -58,6 +84,7 @@ export function resolveRuntimeConfig(
   env: {
     TG_ADMIN_BOT_TOKEN?: string;
     TG_WEBHOOK_SECRET?: string;
+    TG_ADMIN_CHAT_ID?: string;
     EMBY_SERVER_URL?: string;
     EMBY_API_KEY?: string;
     EMBYBOSS_API_URL?: string;
@@ -70,6 +97,7 @@ export function resolveRuntimeConfig(
     embyApiKey: env.EMBY_API_KEY || cfg.embyApiKey,
     embybossApiUrl: env.EMBYBOSS_API_URL || cfg.embybossApiUrl,
     tgAdminBotToken: env.TG_ADMIN_BOT_TOKEN || '',
+    tgAdminChatId: env.TG_ADMIN_CHAT_ID || cfg.tgAdminChatId || '',
     whitelistTitle: env.WHITELIST_TITLE || cfg.whitelistTitle,
   };
 }
