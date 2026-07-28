@@ -1,7 +1,7 @@
 /** cfqm — Cloudflare Workers 入口 */
 
 import { Hono } from 'hono';
-import { getConfig, updateConfig, resolveRuntimeConfig } from './config';
+import { getConfig, resolveRuntimeConfig } from './config';
 import { parseEmbyWebhook, renderTemplate, buildPosterUrl } from './emby';
 import { getDisplayName } from './embyboss';
 import { notify } from './channels';
@@ -10,7 +10,8 @@ import { DEFAULT_RULES } from './types';
 
 type Bindings = {
   CONFIG: KVNamespace;
-  TG_ADMIN_BOT_TOKEN?: string;
+  TG_ADMIN_BOT_TOKEN: string;
+  TG_WEBHOOK_SECRET: string;
   EMBY_SERVER_URL?: string;
   EMBY_API_KEY?: string;
   EMBYBOSS_API_URL?: string;
@@ -23,7 +24,7 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.post('/emby/webhook', async (c) => {
   const kv = c.env.CONFIG;
   const cfg = await getConfig(kv);
-  const rt = resolveRuntimeConfig(c.env as any, cfg);
+  const rt = resolveRuntimeConfig(c.env, cfg);
 
   let payload: any;
   const ct = c.req.header('content-type') ?? '';
@@ -39,7 +40,7 @@ app.post('/emby/webhook', async (c) => {
     }
   }
 
-  if (!payload || typeof payload !== 'object') {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return c.json({ status: 'error', message: 'not a dict' }, 400);
   }
 
@@ -80,12 +81,12 @@ app.post('/emby/webhook', async (c) => {
     position: event.position,
     duration: event.duration,
     progress: event.progress,
-    image: buildPosterUrl(rt.embyServerUrl, event.itemId),
+    image: buildPosterUrl(rt.embyServerUrl, rt.embyApiKey, event.itemId),
   };
 
   const title = renderTemplate(rule.titleTemplate, vars);
   const content = renderTemplate(rule.bodyTemplate, vars);
-  const imageUrl = rule.image ? buildPosterUrl(rt.embyServerUrl, event.itemId) : '';
+  const imageUrl = rule.image ? buildPosterUrl(rt.embyServerUrl, rt.embyApiKey, event.itemId) : '';
 
   console.log('推送通知:', title);
 
@@ -106,19 +107,19 @@ app.post('/emby/webhook', async (c) => {
 app.post('/tg/webhook', async (c) => {
   const kv = c.env.CONFIG;
   const botToken = c.env.TG_ADMIN_BOT_TOKEN;
+  const webhookSecret = c.env.TG_WEBHOOK_SECRET;
 
   if (!botToken) {
     return c.json({ ok: false, error: 'TG_ADMIN_BOT_TOKEN not set' }, 500);
   }
 
-  // 鉴权：请求头 X-TG-Bot-Token 必须匹配；Telegram 也支持 secret_token 字段
-  const providedToken = c.req.header('X-TG-Bot-Token');
-  if (providedToken !== botToken) {
+  // 鉴权：Telegram setWebhook 时传入的 secret_token 会带在 X-Telegram-Bot-Api-Secret-Token 头里
+  const providedSecret = c.req.header('X-Telegram-Bot-Api-Secret-Token');
+  if (webhookSecret && providedSecret !== webhookSecret) {
     return c.json({ ok: false, error: 'unauthorized' }, 401);
   }
 
   const update = await c.req.json();
-  const cfg = await getConfig(kv);
   const message = update.message;
 
   // 处理 /start
@@ -133,20 +134,17 @@ app.post('/tg/webhook', async (c) => {
         [{ text: '🔄 刷新', callback_data: 'main' }],
       ] }
     );
-    // 清空可能残留的编辑状态
-    await setEditState(kv, null);
     return c.json({ ok: true });
   }
 
   // 处理 /set 编辑命令
   if (message?.text && message.text.startsWith('/set')) {
-    const state = await getEditState(kv);
+    const chatId = String(message.chat.id);
+    const state = await getEditState(kv, chatId);
     if (state) {
-      // 记录当前 chatId（首次进入编辑时可能没有）
-      await setEditState(kv, { ...state, chatId: String(message.chat.id) });
-      await handleSetCommand(kv, botToken, String(message.chat.id), message.text);
+      await handleSetCommand(kv, botToken, chatId, message.text);
     } else {
-      await sendTgMessage(botToken, message.chat.id, '请先点按钮进入编辑模式。');
+      await sendTgMessage(botToken, chatId, '请先点按钮进入编辑模式。');
     }
     return c.json({ ok: true });
   }
@@ -155,9 +153,10 @@ app.post('/tg/webhook', async (c) => {
   if (update.callback_query) {
     const cq = update.callback_query;
     const data = cq.data ?? 'noop';
-    const result = await handleCallback(data, kv);
-    if (result && cq.message?.chat?.id && cq.message?.message_id) {
-      await editTgMessage(botToken, String(cq.message.chat.id), cq.message.message_id, result.text, result.keyboard);
+    const chatId = cq.message?.chat?.id ? String(cq.message.chat.id) : null;
+    const result = await handleCallback(data, kv, chatId);
+    if (result && chatId && cq.message?.message_id) {
+      await editTgMessage(botToken, chatId, cq.message.message_id, result.text, result.keyboard);
     }
     // 回答 callback query
     await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {

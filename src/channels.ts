@@ -7,6 +7,10 @@ export interface SendResult {
   status: 'ok' | string;
 }
 
+const TG_CAPTION_LIMIT = 1024;
+const TG_TEXT_LIMIT = 4096;
+const FETCH_TIMEOUT_MS = 5000;
+
 /** Telegram 渠道 */
 async function sendTelegram(
   botToken: string,
@@ -20,12 +24,12 @@ async function sendTelegram(
   // 有海报：先下载再上传（Workers 用 fetch）
   if (notif.imageUrl) {
     try {
-      const imgResp = await fetch(notif.imageUrl);
+      const imgResp = await fetch(notif.imageUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (imgResp.ok) {
         const imgBlob = await imgResp.blob();
         const formData = new FormData();
         formData.append('chat_id', chatId);
-        formData.append('caption', message.slice(0, 1024));
+        formData.append('caption', message.slice(0, TG_CAPTION_LIMIT));
         formData.append('parse_mode', 'HTML');
         formData.append('photo', imgBlob, 'poster.jpg');
 
@@ -41,7 +45,7 @@ async function sendTelegram(
   const resp = await fetch(`${baseUrl}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+    body: JSON.stringify({ chat_id: chatId, text: message.slice(0, TG_TEXT_LIMIT), parse_mode: 'HTML' }),
   });
   if (!resp.ok) {
     const err = await resp.text();

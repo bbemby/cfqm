@@ -55,7 +55,14 @@ export interface RuntimeConfig {
 }
 
 export function resolveRuntimeConfig(
-  env: Record<string, string | undefined>,
+  env: {
+    TG_ADMIN_BOT_TOKEN?: string;
+    TG_WEBHOOK_SECRET?: string;
+    EMBY_SERVER_URL?: string;
+    EMBY_API_KEY?: string;
+    EMBYBOSS_API_URL?: string;
+    WHITELIST_TITLE?: string;
+  },
   cfg: AppConfig
 ): RuntimeConfig {
   return {

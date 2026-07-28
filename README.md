@@ -51,6 +51,7 @@ npx wrangler kv:namespace create CONFIG
 ```bash
 # 必填
 npx wrangler secret put TG_ADMIN_BOT_TOKEN
+npx wrangler secret put TG_WEBHOOK_SECRET
 npx wrangler secret put EMBY_SERVER_URL
 npx wrangler secret put EMBY_API_KEY
 
@@ -80,12 +81,20 @@ https://<your-worker-name>.<your-subdomain>.workers.dev/emby/webhook
 ### 6. 配置 TG 管理 Bot
 
 ```bash
-# 设置 Telegram webhook 指向 Workers（Token 放在请求头里，不在 URL）
-curl -s -H "X-TG-Bot-Token: <TOKEN>" \
-  "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-worker>.workers.dev/tg/webhook"
+# 先生成一个随机 secret（例如用 openssl）
+TG_SECRET=$(openssl rand -hex 24)
+
+# 设置 Telegram webhook，secret_token 由 Telegram 在推送时带在请求头里
+curl -s "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<your-worker>.workers.dev/tg/webhook&secret_token=$TG_SECRET"
 ```
 
-注意：Token 通过 `X-TG-Bot-Token` 请求头鉴权，URL 里不要带 token，避免泄漏到日志。
+然后把这个 secret 写进 Workers：
+```bash
+npx wrangler secret put TG_WEBHOOK_SECRET
+# 粘贴上面生成的 $TG_SECRET
+```
+
+注意：Telegram 推送 webhook 时会带 `X-Telegram-Bot-Api-Secret-Token` 请求头，Workers 用这个鉴权。URL 里不要出现 Bot token。
 
 然后在 Telegram 给 Bot 发 `/start`，即可管理通知规则和渠道。
 
@@ -123,7 +132,9 @@ npx wrangler kv:key put --binding=CONFIG app_config '{
 }'
 ```
 
-注意：`embyServerUrl` / `embyApiKey` 也可放在 KV 里，但 secret 优先级更高。
+注意：
+- `embyServerUrl` / `embyApiKey` 也可放在 KV 里，但 secret 优先级更高。
+- `embyApiKey` 会自动附加到海报图片 URL，避免 Emby 图片接口因未认证返回 401。
 
 ## 模板变量
 
@@ -150,6 +161,14 @@ GET /api/whitelist?emby_id=<emby_user_id>
 ```
 
 设置 secret `EMBYBOSS_API_URL` 指向 embyboss 的 API 地址即可启用。可选通过 `WHITELIST_TITLE` 自定义尊称（默认：尊敬的白名单用户）。
+
+## 管理员认证
+
+TG 管理 Bot 通过 `TG_WEBHOOK_SECRET` 鉴权：
+1. 生成随机 secret
+2. setWebhook 时作为 `secret_token` 传给 Telegram
+3. Telegram 每次推送都带 `X-Telegram-Bot-Api-Secret-Token` 头
+4. Workers 校验该头与 `TG_WEBHOOK_SECRET` 一致
 
 ## 本地开发
 

@@ -78,9 +78,3 @@ export const DEFAULT_RULES: Record<string, Rule> = {
   },
 };
 
-/** 事件中文 */
-export const EVENT_NAMES: Record<string, string> = {
-  media_added: '🎬 媒体入库',
-  playback_start: '▶️ 开始播放',
-  playback_stop: '⏹️ 停止播放',
-};

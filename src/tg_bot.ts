@@ -3,8 +3,6 @@
 import { AppConfig } from './types';
 import { getConfig, updateConfig } from './config';
 
-export { getConfig, updateConfig };
-
 const TG_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
 /** TG 按钮行 */
@@ -68,7 +66,8 @@ function channelsListMenu(cfg: AppConfig): any {
 /** 回调处理 */
 export async function handleCallback(
   data: string,
-  kv: KVNamespace
+  kv: KVNamespace,
+  chatId: string | null
 ): Promise<{ text: string; keyboard: any } | null> {
   if (data === 'main' || data === 'noop') {
     return { text: '⚙️ <b>cfqm 管理</b>\n\n选择管理项目：', keyboard: mainMenu() };
@@ -109,7 +108,7 @@ export async function handleCallback(
     }
 
     if (sub === 'title' || sub === 'body') {
-      await setEditState(kv, { chatId: 'pending', event: ev, field: sub });
+      await setEditState(kv, chatId, { chatId: chatId ?? '', event: ev, field: sub });
       return {
         text: sub === 'title'
           ? `✏️ 编辑 <b>${ev}</b> 的标题\n\n请直接回复：\n<code>/set 标题=你要的标题</code>`
@@ -168,8 +167,8 @@ export async function editTgMessage(
   }
 }
 
-/** 规则编辑状态（暂存在 KV） */
-const EDIT_STATE_KEY = 'tg_edit_state';
+/** 规则编辑状态（按 chatId 隔离，存 KV） */
+const EDIT_STATE_PREFIX = 'tg_edit_state:';
 
 export interface EditState {
   chatId: string;
@@ -177,16 +176,21 @@ export interface EditState {
   field: 'title' | 'body';
 }
 
-export async function setEditState(kv: KVNamespace, state: EditState | null): Promise<void> {
-  if (!state) {
-    await kv.delete(EDIT_STATE_KEY);
-    return;
-  }
-  await kv.put(EDIT_STATE_KEY, JSON.stringify(state));
+function editStateKey(chatId: string | null | undefined): string {
+  return `${EDIT_STATE_PREFIX}${chatId ?? 'unknown'}`;
 }
 
-export async function getEditState(kv: KVNamespace): Promise<EditState | null> {
-  const raw = await kv.get(EDIT_STATE_KEY);
+export async function setEditState(kv: KVNamespace, chatId: string | null | undefined, state: EditState | null): Promise<void> {
+  const key = editStateKey(chatId);
+  if (!state) {
+    await kv.delete(key);
+    return;
+  }
+  await kv.put(key, JSON.stringify(state));
+}
+
+export async function getEditState(kv: KVNamespace, chatId: string | null | undefined): Promise<EditState | null> {
+  const raw = await kv.get(editStateKey(chatId));
   if (!raw) return null;
   try {
     return JSON.parse(raw) as EditState;
@@ -202,7 +206,7 @@ export async function handleSetCommand(
   chatId: string,
   text: string
 ): Promise<void> {
-  const state = await getEditState(kv);
+  const state = await getEditState(kv, chatId);
   if (!state) return;
 
   // 去掉 /set 前缀
@@ -229,7 +233,7 @@ export async function handleSetCommand(
     return cfg;
   });
 
-  await setEditState(kv, null);
+  await setEditState(kv, chatId, null);
   await sendTgMessage(
     botToken,
     chatId,

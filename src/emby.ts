@@ -96,7 +96,8 @@ export function renderTemplate(tpl: string, vars: Record<string, string>): strin
 }
 
 /** 构造海报 URL */
-export function buildPosterUrl(serverUrl: string, itemId: string): string {
+export function buildPosterUrl(serverUrl: string, apiKey: string, itemId: string): string {
   if (!serverUrl || !itemId) return '';
-  return `${serverUrl.replace(/\/$/, '')}/Items/${itemId}/Images/Primary?maxHeight=400`;
+  const url = `${serverUrl.replace(/\/$/, '')}/Items/${itemId}/Images/Primary?maxHeight=400`;
+  return apiKey ? `${url}&api_key=${encodeURIComponent(apiKey)}` : url;
 }
