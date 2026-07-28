@@ -1,0 +1,22 @@
+{
+  "name": "cfqm",
+  "version": "0.1.0",
+  "description": "Cloudflare Workers 版 Emby 事件监听 → 多渠道通知。无服务器、全球 CDN、自带 HTTPS。",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240924.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.78.0"
+  },
+  "keywords": ["cloudflare-workers", "emby", "telegram", "notification", "webhook"],
+  "license": "MIT",
+  "author": "bbemby"
+}

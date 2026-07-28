@@ -1,0 +1,17 @@
+name = "cfqm"
+main = "src/index.ts"
+compatibility_date = "2024-09-24"
+
+# KV 绑定：存储配置（渠道、规则、embyboss 联动等）
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "your-kv-namespace-id"
+
+# Secrets（敏感信息用 wrangler secret put 设置，不写在这里）
+# 必填：
+#   wrangler secret put TG_ADMIN_BOT_TOKEN
+#   wrangler secret put EMBY_SERVER_URL
+#   wrangler secret put EMBY_API_KEY
+# 可选：
+#   wrangler secret put EMBYBOSS_API_URL
+#   wrangler secret put WHITELIST_TITLE
