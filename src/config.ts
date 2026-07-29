@@ -21,6 +21,7 @@ function defaultConfig(): AppConfig {
     embyServerUrl: '',
     embyApiKey: '',
     embybossApiUrl: '',
+    embybossBotToken: '',
     whitelistTitle: '尊敬的白名单用户',
     tgAdminChatId: '',
   };
@@ -75,6 +76,7 @@ export interface RuntimeConfig {
   embyServerUrl: string;
   embyApiKey: string;
   embybossApiUrl: string;
+  embybossBotToken: string;
   tgAdminBotToken: string;
   tgAdminChatId: string;
   whitelistTitle: string;
@@ -88,6 +90,7 @@ export function resolveRuntimeConfig(
     EMBY_SERVER_URL?: string;
     EMBY_API_KEY?: string;
     EMBYBOSS_API_URL?: string;
+    EMBYBOSS_BOT_TOKEN?: string;
     WHITELIST_TITLE?: string;
   },
   cfg: AppConfig
@@ -96,6 +99,7 @@ export function resolveRuntimeConfig(
     embyServerUrl: env.EMBY_SERVER_URL || cfg.embyServerUrl,
     embyApiKey: env.EMBY_API_KEY || cfg.embyApiKey,
     embybossApiUrl: env.EMBYBOSS_API_URL || cfg.embybossApiUrl,
+    embybossBotToken: env.EMBYBOSS_BOT_TOKEN || cfg.embybossBotToken || '',
     tgAdminBotToken: env.TG_ADMIN_BOT_TOKEN || '',
     tgAdminChatId: env.TG_ADMIN_CHAT_ID || cfg.tgAdminChatId || '',
     whitelistTitle: env.WHITELIST_TITLE || cfg.whitelistTitle,

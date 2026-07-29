@@ -16,6 +16,7 @@ type Bindings = {
   EMBY_SERVER_URL?: string;
   EMBY_API_KEY?: string;
   EMBYBOSS_API_URL?: string;
+  EMBYBOSS_BOT_TOKEN?: string;
   WHITELIST_TITLE?: string;
 };
 
@@ -65,8 +66,9 @@ app.post('/emby/webhook', async (c) => {
   if (event.type === 'playback_start' || event.type === 'playback_stop') {
     displayName = await getDisplayName(
       rt.embybossApiUrl,
+      rt.embybossBotToken,
       rt.whitelistTitle,
-      event.userId,
+      event.userName,
       event.userName
     );
   }

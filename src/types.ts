@@ -53,6 +53,7 @@ export interface AppConfig {
   embyServerUrl: string;
   embyApiKey: string;
   embybossApiUrl: string;
+  embybossBotToken: string;
   whitelistTitle: string;
   tgAdminChatId: string;
 }
