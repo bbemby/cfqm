@@ -24,7 +24,10 @@ async function sendTelegram(
   // 有海报：先下载再上传（Workers 用 fetch）
   if (notif.imageUrl) {
     try {
-      const imgResp = await fetch(notif.imageUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      const imgResp = await fetch(notif.imageUrl, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      });
       if (imgResp.ok) {
         const imgBlob = await imgResp.blob();
         const formData = new FormData();

@@ -61,8 +61,17 @@ export function parseEmbyWebhook(payload: any): EmbyEvent | null {
     }
   }
 
-  const posTicks = payload?.PositionTicks ?? 0;
-  const runTicks = payload?.RunTimeTicks ?? item.RunTimeTicks ?? 0;
+  const playbackInfo = payload?.PlaybackInfo ?? {};
+  const posTicks = payload?.PlaybackPositionTicks
+    ?? payload?.PositionTicks
+    ?? playbackInfo.PositionTicks
+    ?? item.PositionTicks
+    ?? item.UserData?.PlaybackPositionTicks
+    ?? 0;
+  const runTicks = payload?.RunTimeTicks
+    ?? playbackInfo.RunTimeTicks
+    ?? item.RunTimeTicks
+    ?? 0;
 
   // Emby 的 library 字段可能放在不同位置
   const library = Array.isArray(item.CollectionFolders) && item.CollectionFolders.length

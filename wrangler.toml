@@ -5,7 +5,7 @@ compatibility_date = "2024-09-24"
 # KV 绑定：存储配置（渠道、规则、embyboss 联动等）
 [[kv_namespaces]]
 binding = "CONFIG"
-id = "your-kv-namespace-id"
+id = "4cf96e262bee497c8d08a2f5e1b6661d"
 
 # Secrets（敏感信息用 wrangler secret put 设置，不写在这里）
 # 必填：
