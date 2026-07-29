@@ -171,6 +171,23 @@ TG 管理 Bot 通过两层鉴权：
 1. `TG_WEBHOOK_SECRET`：Telegram 每次推送都带 `X-Telegram-Bot-Api-Secret-Token` 头，Workers 校验该头
 2. `TG_ADMIN_CHAT_ID`：只有指定 Telegram 用户能操作管理 Bot（强烈建议配置）
 
+## 常见问题
+
+### Emby 用 IP:port 时海报不显示
+
+如果 `EMBY_SERVER_URL` 填的是 `http://<IP>:<PORT>`，cfqm 在 Cloudflare Workers 里下载海报时可能收到 **403 error code: 1003**，导致通知只有文字没有封面。
+
+**原因**：部分网络环境/主机商会拦截来自 Cloudflare Workers 的直接 IP 请求。
+
+**解决**：把 `EMBY_SERVER_URL` 改成 Emby 的**公网 HTTPS 域名**（例如 `https://bb.emby.edu.kg`），并确保该域名能被公网访问。
+
+```bash
+npx wrangler secret put EMBY_SERVER_URL
+# 输入 https://你的-emby-域名
+```
+
+同时建议把 KV 里的 `embyServerUrl` 也改成一致（Secret 优先级高于 KV，但保持一致更稳妥）。
+
 ## 本地开发
 
 ```bash
