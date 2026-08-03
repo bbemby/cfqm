@@ -55,12 +55,15 @@ export async function getDisplayName(
   if (!embybossApiUrl || !embyUserId) return `用户：${originalName}`;
   try {
     const result = await checkWhitelist(embybossApiUrl, embybossBotToken, embyUserId);
+    console.log('白名单查询结果:', result);
     if (result.whitelist) {
       const displayName = result.privacy_mode ? maskName(originalName) : originalName;
-      return `<b><u>👑 ${whitelistTitle}</u></b>：${displayName}`;
+      const finalName = `👑 【${whitelistTitle}】：${displayName}`;
+      console.log('最终显示名:', finalName);
+      return finalName;
     }
-  } catch {
-    // 降级
+  } catch (e) {
+    console.log('getDisplayName 异常:', e);
   }
   return `用户：${originalName}`;
 }
