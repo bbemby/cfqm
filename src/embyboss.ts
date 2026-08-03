@@ -58,7 +58,7 @@ export async function getDisplayName(
     console.log('白名单查询结果:', result);
     if (result.whitelist) {
       const displayName = result.privacy_mode ? maskName(originalName) : originalName;
-      const finalName = `👑 【${whitelistTitle}】：${displayName}`;
+      const finalName = `🔱👑【${whitelistTitle}】👑🔱\n用户：${displayName}`;
       console.log('最终显示名:', finalName);
       return finalName;
     }
