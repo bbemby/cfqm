@@ -57,7 +57,7 @@ export async function getDisplayName(
     const result = await checkWhitelist(embybossApiUrl, embybossBotToken, embyUserId);
     if (result.whitelist) {
       const displayName = result.privacy_mode ? maskName(originalName) : originalName;
-      return `<b>${whitelistTitle}</b>：${displayName}`;
+      return `<b><u>👑 ${whitelistTitle}</u></b>：${displayName}`;
     }
   } catch {
     // 降级
