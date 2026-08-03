@@ -36,10 +36,10 @@ export async function checkWhitelist(
   }
 }
 
-/** 用户名脱敏：只保留首字，其余替换为 * */
+/** 用户名脱敏：全部替换为与长度相等的 * */
 function maskName(name: string): string {
-  if (!name || name.length <= 1) return name;
-  return name[0] + '*'.repeat(name.length - 1);
+  if (!name) return name;
+  return '*'.repeat(name.length);
 }
 
 /** 获取显示名：白名单加尊称，并支持隐私模式脱敏 */
