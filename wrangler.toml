@@ -7,6 +7,10 @@ compatibility_date = "2024-09-24"
 binding = "CONFIG"
 id = "4cf96e262bee497c8d08a2f5e1b6661d"
 
+# 普通环境变量（在 Cloudflare 控制台可见可改）
+[vars]
+WHITELIST_TITLE = "尊敬的白名单用户"
+
 # Secrets（敏感信息用 wrangler secret put 设置，不写在这里）
 # 必填：
 #   wrangler secret put TG_ADMIN_BOT_TOKEN
@@ -16,4 +20,4 @@ id = "4cf96e262bee497c8d08a2f5e1b6661d"
 #   wrangler secret put EMBY_API_KEY
 # 可选：
 #   wrangler secret put EMBYBOSS_API_URL
-#   wrangler secret put WHITELIST_TITLE
+#   wrangler secret put EMBYBOSS_BOT_TOKEN
