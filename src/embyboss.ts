@@ -20,7 +20,10 @@ export async function checkWhitelist(
     const url = new URL(`${embybossApiUrl.replace(/\/$/, '')}/user/whitelist`);
     url.searchParams.set('emby_id', embyUserId);
     url.searchParams.set('token', embybossBotToken);
-    console.log('查白名单:', url.toString());
+    // 日志脱敏：不把 token 打出来
+    const logUrl = new URL(url.toString());
+    logUrl.searchParams.set('token', '***');
+    console.log('查白名单:', logUrl.toString());
     const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     console.log('白名单响应:', resp.status);
     if (!resp.ok) return { whitelist: false, privacy_mode: false };

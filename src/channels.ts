@@ -11,6 +11,11 @@ const TG_CAPTION_LIMIT = 1024;
 const TG_TEXT_LIMIT = 4096;
 const FETCH_TIMEOUT_MS = 5000;
 
+/** HTML 转义：片名/用户名里的 <>& 会导致 Telegram 400 */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /** Telegram 渠道 */
 async function sendTelegram(
   botToken: string,
@@ -19,7 +24,7 @@ async function sendTelegram(
   type: EventType
 ): Promise<void> {
   const baseUrl = `https://api.telegram.org/bot${botToken}`;
-  const message = `<b>${notif.title}</b>\n${notif.content}`;
+  const message = `<b>${escapeHtml(notif.title)}</b>\n${escapeHtml(notif.content)}`;
 
   // 有海报：先下载再上传（Workers 用 fetch）
   if (notif.imageUrl) {
