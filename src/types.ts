@@ -14,6 +14,7 @@ export interface EmbyEvent {
   deviceName: string;
   client: string;
   itemId: string;
+  itemType: string;
   year: string;
   library: string;
   position: string;
@@ -34,6 +35,7 @@ export interface Rule {
   titleTemplate: string;
   bodyTemplate: string;
   image: boolean;
+  skipEpisodes?: boolean; // 入库事件是否跳过单集（防批量入库刷屏）
 }
 
 /** 渠道配置 */
@@ -65,6 +67,7 @@ export const DEFAULT_RULES: Record<string, Rule> = {
     titleTemplate: '🎬 新片入库',
     bodyTemplate: '{{title}} ({{year}}) 已加入 {{library}}',
     image: true,
+    skipEpisodes: true,
   },
   playback_start: {
     enabled: true,

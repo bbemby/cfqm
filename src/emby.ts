@@ -87,6 +87,7 @@ export function parseEmbyWebhook(payload: any): EmbyEvent | null {
     deviceName,
     client,
     itemId,
+    itemType: String(item.Type ?? ''),
     year: String(item.ProductionYear ?? ''),
     library,
     position: ticksToStr(posTicks),

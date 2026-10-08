@@ -61,10 +61,22 @@ app.post('/emby/webhook', async (c) => {
     return c.json({ status: 'skipped', event: event.type });
   }
 
+  // 入库事件：可配置跳过单集（Emby 批量入库时一部剧 N 集会发 N 条 webhook）
+  if (event.type === 'media_added' && rule.skipEpisodes && event.itemType === 'Episode') {
+    console.log('跳过单集入库通知:', event.title);
+    return c.json({ status: 'skipped', event: event.type, reason: 'episode' });
+  }
+
+  // 没有启用的渠道就不往下走了（省一次白名单查询）
+  const hasChannel = cfg.channels.some((ch) => ch.enabled && ch.events?.includes(event.type));
+  if (!hasChannel) {
+    return c.json({ status: 'no_channels', event: event.type });
+  }
+
   // 播放开始去重：Emby 在暂停/续播、拖进度条、转码重启时会重发 PlaybackStart，
   // 同一用户同一影片 1 分钟内只通知一次
   if (event.type === 'playback_start' && event.itemId) {
-    const who = event.userId || event.userName || 'unknown';
+    const who = event.userId || event.userName || event.deviceId || 'unknown';
     const dedupKey = `dedup:play:${who}:${event.itemId}`;
     const last = await kv.get(dedupKey);
     const now = Date.now();

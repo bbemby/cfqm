@@ -28,12 +28,16 @@ function defaultConfig(): AppConfig {
 }
 
 /** 深度合并规则：KV 里的规则与默认规则合并 */
+/** 规则兜底：手改 KV 导致规则字段缺失时补全，避免详情页崩溃 */
+const RULE_FALLBACK: Rule = { enabled: false, titleTemplate: '', bodyTemplate: '', image: false };
+
 function mergeRules(defaultRules: Record<string, Rule>, savedRules?: Record<string, Partial<Rule>>): Record<string, Rule> {
   if (!savedRules || typeof savedRules !== 'object') return cloneRules(defaultRules);
   const out = cloneRules(defaultRules);
   for (const [k, v] of Object.entries(savedRules)) {
     if (!v || typeof v !== 'object') continue;
-    out[k] = { ...out[k], ...v };
+    const base = out[k] ?? RULE_FALLBACK;
+    out[k] = { ...base, ...v };
   }
   return out;
 }
