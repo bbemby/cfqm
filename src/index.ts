@@ -61,6 +61,20 @@ app.post('/emby/webhook', async (c) => {
     return c.json({ status: 'skipped', event: event.type });
   }
 
+  // 播放开始去重：Emby 在暂停/续播、拖进度条、转码重启时会重发 PlaybackStart，
+  // 同一用户同一影片 1 分钟内只通知一次
+  if (event.type === 'playback_start' && event.itemId) {
+    const who = event.userId || event.userName || 'unknown';
+    const dedupKey = `dedup:play:${who}:${event.itemId}`;
+    const last = await kv.get(dedupKey);
+    const now = Date.now();
+    if (last && now - Number(last) < 60 * 1000) {
+      console.log('重复播放开始，已去重:', dedupKey);
+      return c.json({ status: 'deduped', event: event.type });
+    }
+    await kv.put(dedupKey, String(now), { expirationTtl: 60 });
+  }
+
   // embyboss 白名单
   let displayName = `用户：${event.userName}`;
   if (event.type === 'playback_start' || event.type === 'playback_stop') {
