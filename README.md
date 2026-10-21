@@ -97,7 +97,7 @@ npx wrangler secret put TG_WEBHOOK_SECRET
 
 注意：Telegram 推送 webhook 时会带 `X-Telegram-Bot-Api-Secret-Token` 请求头，Workers 用这个鉴权。URL 里不要出现 Bot token。
 
-`TG_ADMIN_CHAT_ID` 是你的 Telegram 数字 ID（不是用户名）。配置后只有该 ID 能操作管理 Bot；未配置时不限制（不建议生产环境）。
+`TG_ADMIN_CHAT_ID` 是管理员本人的 Telegram 数字 ID（不是用户名；私聊里它就等于 chat id）。只有该 ID 能操作管理 Bot；未配置时管理 Bot 拒绝一切操作。
 
 然后在 Telegram 给 Bot 发 `/start`，即可管理通知规则和渠道。
 
@@ -159,17 +159,21 @@ npx wrangler kv:key put --binding=CONFIG app_config '{
 cfqm 不能直连 MySQL，需要 embyboss 暴露一个 HTTP 接口：
 
 ```
-GET /api/whitelist?emby_id=<emby_user_id>
-→ { "whitelist": true/false }
+GET /user/whitelist?emby_id=<Emby用户名>&token=<bot_token>
+→ { "whitelist": true/false, "privacy_mode": true/false }
 ```
 
-设置 secret `EMBYBOSS_API_URL` 指向 embyboss 的 API 地址即可启用。可选通过 `WHITELIST_TITLE` 自定义尊称（默认：尊敬的白名单用户）。
+设置 secret `EMBYBOSS_API_URL` 指向 embyboss 的 API 地址、`EMBYBOSS_BOT_TOKEN` 填 bb_boss 的接口 token（必填，否则白名单查询会被拒绝）。可选通过 `WHITELIST_TITLE` 自定义尊称（默认：尊敬的白名单用户）。
+
+注意：`emby_id` 传的是 Emby 用户名，不是 Emby 内部 ID。
 
 ## 管理员认证
 
 TG 管理 Bot 通过两层鉴权：
 1. `TG_WEBHOOK_SECRET`：Telegram 每次推送都带 `X-Telegram-Bot-Api-Secret-Token` 头，Workers 校验该头
-2. `TG_ADMIN_CHAT_ID`：只有指定 Telegram 用户能操作管理 Bot（强烈建议配置）
+2. `TG_ADMIN_CHAT_ID`：必填，填管理员本人的 Telegram 数字 ID（私聊里它就等于 chat id）。只有该用户能操作管理 Bot，未配置时管理 Bot 拒绝一切操作；群里按 `from.id` 校验，群成员无法冒用。
+
+Bark / 通用 Webhook 渠道不发送图片：海报 URL 里带 Emby API Key，发给第三方等于泄 Key，所以这两个渠道只发文字；Telegram 渠道由 Worker 下载图片后上传，不外发 URL，海报正常。
 
 ## 常见问题
 
@@ -187,6 +191,10 @@ npx wrangler secret put EMBY_SERVER_URL
 ```
 
 同时建议把 KV 里的 `embyServerUrl` 也改成一致（Secret 优先级高于 KV，但保持一致更稳妥）。
+
+### 播放量大时 KV 写额度
+
+播放开始去重每次都要写一次 KV（`dedup:play:*`，TTL 60 秒）。Cloudflare KV 免费版写额度只有约 1000 次/天，播放量大的服容易用满；写失败时 webhook 不会 500，通知照常发，只是去重可能暂时失效。播放量大的实例建议用 KV 付费额度。
 
 ## 本地开发
 

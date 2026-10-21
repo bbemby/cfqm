@@ -31,7 +31,11 @@ app.post('/emby/webhook', async (c) => {
   let payload: any;
   const ct = c.req.header('content-type') ?? '';
   if (ct.includes('json')) {
-    payload = await c.req.json();
+    try {
+      payload = await c.req.json();
+    } catch {
+      return c.json({ status: 'error', message: 'bad json' }, 400);
+    }
   } else {
     const form = await c.req.formData();
     const raw = form.get('data');
@@ -74,17 +78,21 @@ app.post('/emby/webhook', async (c) => {
   }
 
   // 播放开始去重：Emby 在暂停/续播、拖进度条、转码重启时会重发 PlaybackStart，
-  // 同一用户同一影片 1 分钟内只通知一次
+  // 同一用户同一影片 1 分钟内只通知一次。去重读写失败也不阻塞通知（KV 写额度用满时照常推）。
   if (event.type === 'playback_start' && event.itemId) {
-    const who = event.userId || event.userName || event.deviceId || 'unknown';
-    const dedupKey = `dedup:play:${who}:${event.itemId}`;
-    const last = await kv.get(dedupKey);
-    const now = Date.now();
-    if (last && now - Number(last) < 60 * 1000) {
-      console.log('重复播放开始，已去重:', dedupKey);
-      return c.json({ status: 'deduped', event: event.type });
+    try {
+      const who = event.userId || event.userName || event.deviceId || 'unknown';
+      const dedupKey = `dedup:play:${who}:${event.itemId}`;
+      const last = await kv.get(dedupKey);
+      const now = Date.now();
+      if (last && now - Number(last) < 60 * 1000) {
+        console.log('重复播放开始，已去重:', dedupKey);
+        return c.json({ status: 'deduped', event: event.type });
+      }
+      await kv.put(dedupKey, String(now), { expirationTtl: 60 });
+    } catch (e) {
+      console.error('去重读写失败，继续推送:', e);
     }
-    await kv.put(dedupKey, String(now), { expirationTtl: 60 });
   }
 
   // embyboss 白名单
@@ -152,17 +160,35 @@ app.post('/tg/webhook', async (c) => {
     return c.json({ ok: false, error: 'unauthorized' }, 401);
   }
 
-  const update = await c.req.json();
+  let update: any;
+  try {
+    update = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'bad json' }, 400);
+  }
+  if (!update || typeof update !== 'object') {
+    return c.json({ ok: true, ignored: true });
+  }
   const message = update.message;
+  const callback = update.callback_query;
   const chatId = message?.chat?.id ? String(message.chat.id) : null;
+  // 管理员按用户 id 校验：私聊里 from.id == chat.id；群里只有 from.id 能区分成员，
+  // 且 callback 更新没有顶层 message，必须同时看 callback_query.from
+  const userId = message?.from?.id ?? callback?.from?.id ?? null;
+  const userIdStr = userId != null ? String(userId) : null;
 
-  // 管理员白名单校验
-  const adminChatId = rt.tgAdminChatId;
-  if (!isAdmin(adminChatId, chatId)) {
-    if (chatId) {
+  // 管理员白名单校验（前置统一 gate，message 和 callback 共用）
+  const adminUserId = rt.tgAdminChatId;
+  if (!isAdmin(adminUserId, userIdStr)) {
+    // 未配置管理员时静默忽略；已配置但非管理员：私聊给一句提示，回调只应答不打扰。
+    // 非管理员一律返回 200，避免 Telegram 对 403 反复重试。
+    if (adminUserId && message && chatId) {
       await sendTgMessage(botToken, chatId, '⛔ 你不是管理员，无法使用此 Bot。');
     }
-    return c.json({ ok: false, error: 'forbidden' }, 403);
+    if (callback) {
+      await answerCallbackQuery(botToken, callback.id);
+    }
+    return c.json({ ok: true, ignored: true });
   }
 
   // 处理 /start（支持 /start@botname）
@@ -181,8 +207,8 @@ app.post('/tg/webhook', async (c) => {
     return c.json({ ok: true });
   }
 
-  // 处理 /set 编辑命令
-  if (message?.text && message.text.startsWith('/set')) {
+  // 处理 /set 编辑命令（/set 本身也匹配，/setup 不再误命中）
+  if (message?.text && /^\/set(@\w+)?(\s|$)/.test(message.text)) {
     if (!chatId) return c.json({ ok: false, error: 'no chat id' }, 400);
     const state = await getEditState(kv, chatId);
     if (state) {
@@ -193,17 +219,11 @@ app.post('/tg/webhook', async (c) => {
     return c.json({ ok: true });
   }
 
-  // 处理按钮回调
-  if (update.callback_query) {
-    const cq = update.callback_query;
+  // 处理按钮回调（前置 gate 已按 from.id 校验过管理员，这里不再重复用 chat id 拦）
+  if (callback) {
+    const cq = callback;
     const data = cq.data ?? 'noop';
     const cbChatId = cq.message?.chat?.id ? String(cq.message.chat.id) : null;
-
-    // 回调也要校验管理员
-    if (!isAdmin(adminChatId, cbChatId)) {
-      await answerCallbackQuery(botToken, cq.id);
-      return c.json({ ok: false, error: 'forbidden' }, 403);
-    }
 
     const result = await handleCallback(data, kv, cbChatId);
     if (result && cbChatId && cq.message?.message_id) {

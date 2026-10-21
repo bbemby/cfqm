@@ -2,13 +2,15 @@
 
 import { AppConfig } from './types';
 import { getConfig, updateConfig } from './config';
+import { fetchWithTimeout } from './http';
 
 const TG_API = (token: string) => `https://api.telegram.org/bot${token}`;
 
-/** 校验是否为管理员 */
-export function isAdmin(allowedChatId: string, chatId: string | number | null | undefined): boolean {
-  if (!allowedChatId) return true; // 未配置则不限制
-  return String(chatId) === allowedChatId;
+/** 校验是否为管理员：按用户 id 比对（私聊里 from.id == chat.id；群里只有 from.id 能区分成员）。
+ *  未配置管理员 id 时拒绝一切管理操作，不再默认开放。 */
+export function isAdmin(allowedUserId: string, userId: string | number | null | undefined): boolean {
+  if (!allowedUserId) return false;
+  return String(userId) === allowedUserId;
 }
 
 /** TG 按钮行 */
@@ -67,14 +69,14 @@ function ruleDetailMenu(ev: string, cfg: AppConfig): any {
   return kb(rows);
 }
 
-/** 渠道列表面板 */
+/** 渠道列表面板：回调按渠道 id 定位，不用数组下标（列表变化时旧按钮不会指错对象） */
 function channelsListMenu(cfg: AppConfig): any {
   const rows: TgRow[] = [[{ text: '📡 通知渠道', callback_data: 'noop' }]];
   for (let i = 0; i < cfg.channels.length; i++) {
     const ch = cfg.channels[i];
     const on = ch.enabled ? '✔️' : '❌';
     const name = ch.name || ch.id || `渠道${i}`;
-    rows.push([{ text: `${on} ${name} · ${ch.type}`, callback_data: `chan:${i}` }]);
+    rows.push([{ text: `${on} ${name} · ${ch.type}`, callback_data: `chan:${ch.id}` }]);
   }
   rows.push([{ text: '➕ 添加渠道', callback_data: 'chan:add' }]);
   rows.push([{ text: '🔙 返回', callback_data: 'main' }]);
@@ -89,11 +91,11 @@ function channelDetailText(ch: any): string {
 }
 
 /** 渠道详情面板 */
-function channelDetailMenu(i: number, enabled: boolean): any {
+function channelDetailMenu(id: string, enabled: boolean): any {
   const on = enabled ? '✔️' : '❌';
   return kb([
-    [{ text: `${on} 总开关`, callback_data: `chan:${i}:toggle` }],
-    [{ text: '🗑️ 删除渠道', callback_data: `chan:${i}:del` }],
+    [{ text: `${on} 总开关`, callback_data: `chan:${id}:toggle` }],
+    [{ text: '🗑️ 删除渠道', callback_data: `chan:${id}:del` }],
     [{ text: '🔙 返回渠道列表', callback_data: 'channels' }],
   ]);
 }
@@ -104,6 +106,10 @@ export async function handleCallback(
   kv: KVNamespace,
   chatId: string | null
 ): Promise<{ text: string; keyboard: any } | null> {
+  // 返回/取消类导航要真正清掉编辑状态，否则“取消”后 10 分钟内再发 /set 会续上旧流程
+  if (data === 'main' || data === 'noop' || data === 'rules' || data === 'channels') {
+    await setEditState(kv, chatId, null);
+  }
   if (data === 'main' || data === 'noop') {
     return { text: '⚙️ <b>cfqm 管理</b>\n\n选择管理项目：', keyboard: mainMenu() };
   }
@@ -148,39 +154,42 @@ export async function handleCallback(
     return { text: '当前没有可跳过的步骤', keyboard: mainMenu() };
   }
 
-  // 渠道详情 / 开关 / 删除
+  // 渠道详情 / 开关 / 删除：按 id 定位，写操作里按 id 重找下标，避免两次读之间列表变化指错对象
   if (data.startsWith('chan:')) {
     const parts = data.split(':');
-    const idx = Number(parts[1]);
+    const id = parts[1];
     const sub = parts[2];
     const cfg = await getConfig(kv);
-    const ch = cfg.channels[idx];
+    const ch = cfg.channels.find((c) => c.id === id);
     if (!ch) {
       return { text: '渠道不存在', keyboard: channelsListMenu(cfg) };
     }
     if (!sub) {
-      return { text: channelDetailText(ch), keyboard: channelDetailMenu(idx, ch.enabled) };
+      return { text: channelDetailText(ch), keyboard: channelDetailMenu(ch.id, ch.enabled) };
     }
     if (sub === 'toggle') {
       const newCfg = await updateConfig(kv, (c) => {
-        if (c.channels[idx]) c.channels[idx].enabled = !c.channels[idx].enabled;
+        const j = c.channels.findIndex((x) => x.id === id);
+        if (j >= 0) c.channels[j].enabled = !c.channels[j].enabled;
         return c;
       });
-      const nch = newCfg.channels[idx];
-      return { text: channelDetailText(nch), keyboard: channelDetailMenu(idx, nch.enabled) };
+      const nch = newCfg.channels.find((x) => x.id === id);
+      if (!nch) return { text: '渠道不存在', keyboard: channelsListMenu(newCfg) };
+      return { text: channelDetailText(nch), keyboard: channelDetailMenu(nch.id, nch.enabled) };
     }
     if (sub === 'del') {
       return {
         text: `确定删除渠道 <b>${escapeHtml(ch.name || ch.id || '')}</b> 吗？`,
         keyboard: kb([
-          [{ text: '✅ 确认删除', callback_data: `chan:${idx}:del_yes` }],
-          [{ text: '🔙 取消', callback_data: `chan:${idx}` }],
+          [{ text: '✅ 确认删除', callback_data: `chan:${id}:del_yes` }],
+          [{ text: '🔙 取消', callback_data: `chan:${id}` }],
         ]),
       };
     }
     if (sub === 'del_yes') {
       const newCfg = await updateConfig(kv, (c) => {
-        c.channels.splice(idx, 1);
+        const j = c.channels.findIndex((x) => x.id === id);
+        if (j >= 0) c.channels.splice(j, 1);
         return c;
       });
       return { text: '✅ 渠道已删除', keyboard: channelsListMenu(newCfg) };
@@ -198,6 +207,8 @@ export async function handleCallback(
     }
 
     if (!sub) {
+      // 从编辑提示点“返回”回到详情 = 放弃本次编辑，清掉状态
+      await setEditState(kv, chatId, null);
       const cfg = await getConfig(kv);
       return { text: `📋 规则详情：${ev}`, keyboard: ruleDetailMenu(ev, cfg) };
     }
@@ -244,7 +255,7 @@ export async function sendTgMessage(
   text: string,
   keyboard?: any
 ): Promise<void> {
-  const resp = await fetch(`${TG_API(botToken)}/sendMessage`, {
+  const resp = await fetchWithTimeout(`${TG_API(botToken)}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -268,7 +279,7 @@ export async function editTgMessage(
   text: string,
   keyboard?: any
 ): Promise<void> {
-  const resp = await fetch(`${TG_API(botToken)}/editMessageText`, {
+  const resp = await fetchWithTimeout(`${TG_API(botToken)}/editMessageText`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -289,7 +300,7 @@ export async function editTgMessage(
 
 /** 回答 callback query */
 export async function answerCallbackQuery(botToken: string, queryId: string): Promise<void> {
-  const resp = await fetch(`${TG_API(botToken)}/answerCallbackQuery`, {
+  const resp = await fetchWithTimeout(`${TG_API(botToken)}/answerCallbackQuery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ callback_query_id: queryId }),
@@ -378,6 +389,14 @@ function validateChannelDraft(type: string, draft: Record<string, string>): stri
     if (!draft.chat_id) return 'chat_id 不能为空';
   } else if (type === 'bark') {
     if (!draft.device_key) return 'device_key 不能为空';
+    if (draft.server_url) {
+      try {
+        const u = new URL(draft.server_url);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'server_url 必须是 http(s) 地址';
+      } catch {
+        return 'server_url 不是合法 URL';
+      }
+    }
   } else if (type === 'webhook') {
     if (!draft.endpoint || !/^https?:\/\//.test(draft.endpoint)) return 'endpoint 必须是 http(s) 地址';
   } else {
@@ -434,8 +453,8 @@ export async function handleSetCommand(
   const state = await getEditState(kv, chatId);
   if (!state) return;
 
-  // 去掉 /set 前缀
-  const payload = text.replace(/^\/set\s*/, '');
+  // 去掉 /set 前缀（兼容群里的 /set@botname）
+  const payload = text.replace(/^\/set(@\w+)?\s*/, '');
   const m = payload.match(/^([^=]+)=(.+)$/s);
   if (!m) {
     await sendTgMessage(botToken, chatId, '格式不对。请用：\n<code>/set 字段名=值</code>');

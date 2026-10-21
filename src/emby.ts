@@ -96,18 +96,16 @@ export function parseEmbyWebhook(payload: any): EmbyEvent | null {
   };
 }
 
-/** 渲染模板：{{var}} 替换 */
+/** 渲染模板：{{var}} 替换。单次正则替换 + 函数返回值，避免两点旧毛病：
+ *  1) replaceAll 字符串替换会把值里的 $&、$' 等当成替换模式；
+ *  2) 逐个变量替换时，值里若含后续变量名会被二次替换。 */
 export function renderTemplate(tpl: string, vars: Record<string, string>): string {
-  let out = tpl;
-  for (const [k, v] of Object.entries(vars)) {
-    out = out.replaceAll(`{{${k}}}`, v);
-  }
-  return out;
+  return tpl.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars ? vars[k] : m));
 }
 
-/** 构造海报 URL */
+/** 构造海报 URL（仅 Worker 内使用：TG 路径下载后上传，不外发；Bark/Webhook 已不再接收图片） */
 export function buildPosterUrl(serverUrl: string, apiKey: string, itemId: string): string {
   if (!serverUrl || !itemId) return '';
-  const url = `${serverUrl.replace(/\/$/, '')}/Items/${itemId}/Images/Primary?maxHeight=400`;
+  const url = `${serverUrl.replace(/\/$/, '')}/Items/${encodeURIComponent(itemId)}/Images/Primary?maxHeight=400`;
   return apiKey ? `${url}&api_key=${encodeURIComponent(apiKey)}` : url;
 }
