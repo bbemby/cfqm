@@ -2,7 +2,7 @@
 
 import { Hono } from 'hono';
 import { getConfig, resolveRuntimeConfig } from './config';
-import { parseEmbyWebhook, renderTemplate, buildPosterUrl } from './emby';
+import { parseEmbyWebhook, renderTemplate, resolvePosterUrl } from './emby';
 import { getDisplayName } from './embyboss';
 import { notify } from './channels';
 import { handleCallback, sendTgMessage, editTgMessage, handleSetCommand, getEditState, answerCallbackQuery, isAdmin } from './tg_bot';
@@ -122,16 +122,18 @@ app.post('/emby/webhook', async (c) => {
 
   const title = renderTemplate(rule.titleTemplate, vars);
   const content = renderTemplate(rule.bodyTemplate, vars);
-  const imageUrl = rule.image ? buildPosterUrl(rt.embyServerUrl, rt.embyApiKey, event.itemId) : '';
 
   console.log('推送通知:', title);
 
-  // 异步推送（不阻塞 webhook 响应）
-  const notif = { title, content, imageUrl };
+  // 异步推送（不阻塞 webhook 响应）：海报解析需要多查一次 Emby，也放异步里
   c.executionCtx.waitUntil(
-    notify(cfg.channels, event.type, notif).then((r) => {
+    (async () => {
+      const imageUrl = rule.image
+        ? await resolvePosterUrl(rt.embyServerUrl, rt.embyApiKey, event.itemId, event.userId, event.seriesId)
+        : '';
+      const r = await notify(cfg.channels, event.type, { title, content, imageUrl });
       console.log('推送结果:', JSON.stringify(r));
-    }).catch((e) => {
+    })().catch((e) => {
       console.error('推送失败:', e);
     })
   );

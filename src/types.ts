@@ -14,6 +14,7 @@ export interface EmbyEvent {
   deviceName: string;
   client: string;
   itemId: string;
+  seriesId: string;
   itemType: string;
   year: string;
   library: string;
