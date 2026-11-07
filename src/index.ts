@@ -5,11 +5,13 @@ import { getConfig, resolveRuntimeConfig } from './config';
 import { parseEmbyWebhook, renderTemplate, resolvePosterUrl } from './emby';
 import { getDisplayName } from './embyboss';
 import { notify } from './channels';
+import { isDuplicatePlayback, markPlayback } from './dedup';
 import { handleCallback, sendTgMessage, editTgMessage, handleSetCommand, getEditState, answerCallbackQuery, isAdmin } from './tg_bot';
 import { DEFAULT_RULES } from './types';
 
 type Bindings = {
   CONFIG: KVNamespace;
+  DEDUP: D1Database;
   TG_ADMIN_BOT_TOKEN: string;
   TG_WEBHOOK_SECRET: string;
   TG_ADMIN_CHAT_ID?: string;
@@ -78,18 +80,17 @@ app.post('/emby/webhook', async (c) => {
   }
 
   // 播放开始去重：Emby 在暂停/续播、拖进度条、转码重启时会重发 PlaybackStart，
-  // 同一用户同一影片 1 分钟内只通知一次。去重读写失败也不阻塞通知（KV 写额度用满时照常推）。
+  // 同一用户同一影片 1 分钟内只通知一次。去重读写失败也不阻塞通知（D1 写额度每天 10 万行）。
   if (event.type === 'playback_start' && event.itemId) {
     try {
       const who = event.userId || event.userName || event.deviceId || 'unknown';
       const dedupKey = `dedup:play:${who}:${event.itemId}`;
-      const last = await kv.get(dedupKey);
       const now = Date.now();
-      if (last && now - Number(last) < 60 * 1000) {
+      if (await isDuplicatePlayback(c.env.DEDUP, dedupKey, now)) {
         console.log('重复播放开始，已去重:', dedupKey);
         return c.json({ status: 'deduped', event: event.type });
       }
-      await kv.put(dedupKey, String(now), { expirationTtl: 60 });
+      await markPlayback(c.env.DEDUP, dedupKey, now);
     } catch (e) {
       console.error('去重读写失败，继续推送:', e);
     }
